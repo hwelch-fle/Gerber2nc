@@ -17,16 +17,19 @@ from shapely.ops import unary_union
 
 
 class Gerber_Traces_Parser:
-    def __init__(self, filename):
-        self.apertures = {}
-        self.current_aperture = None
-        self.traces = []
-        self.pads = []
-        self.unit_mult = 1.0
+    def __init__(self, filename: str):
+        self.apertures:dict = {}
+        self.current_aperture:int = -1
+        self.traces:list = []
+
+        self.pads:list = []
+        self.unit_mult:float = 1.0
+        self.current_x:float = -1000.0
+        self.current_y:float = -1000.0
 
         self._parse_gerber_file(filename)
 
-    def _process_extended_command(self, line):
+    def _process_extended_command(self, line:str):
         # Process extended commands (those starting with %)
         if not line:
             return
@@ -63,7 +66,7 @@ class Gerber_Traces_Parser:
         elif 'MOIN*%' in line:
             self.unit_mult = 25.4
 
-    def _process_command(self, line):
+    def _process_command(self, line:str):
         # Process regular Gerber commands
         global x_min,x_max,y_min,y_max
 
@@ -109,7 +112,7 @@ class Gerber_Traces_Parser:
             # Update current position
             self.current_x, self.current_y = x, y
 
-    def _parse_gerber_file(self, filename):
+    def _parse_gerber_file(self, filename:str):
         # Parse a Gerber file and extract traces and aperture information
         with open(filename, 'r', encoding='utf-8') as f:
             content = f.read()
@@ -124,24 +127,24 @@ class Gerber_Traces_Parser:
             else:
                 self._process_command(line)
 
-    def shift(self, x_base, y_base):
+    def shift(self, x_shift:float, y_shift:float):
         # Shift all the coordinates so that X and Y go from zero up
         for trace in self.traces:
             for startstop in range(2):
                 x,y = trace[startstop]
-                trace[startstop] = [x-x_base,y-y_base]
+                trace[startstop] = [x-x_shift,y-y_shift]
 
         for pad in self.pads:
             x, y = pad[0]
-            pad[0] = [x-x_base, y-y_base]
+            pad[0] = [x-x_shift, y-y_shift]
             aperture = pad[0]
 
 #=========================================================================================
 class Gerber_EdgeCuts_Parser:
-    def __init__(self, filename):
-        self.outline = []
+    def __init__(self, filename:str):
+        self.outline: list[tuple[float, float]] = []
+        self.unit_mult:float = 1.0
         global x_min,x_max,y_min,y_max
-        self.unit_mult = 1.0
 
         # Parse the edge cuts gerber file.
         try:
@@ -194,9 +197,9 @@ class Gerber_EdgeCuts_Parser:
 
 #=========================================================================================
 class Drillfile_Parser:
-    def __init__(self,filename):
-        self.tool_diameters = {}
-        self.holes = []
+    def __init__(self,filename:str):
+        self.tool_diameters:dict = {}
+        self.holes: list[tuple[float, float, float]] = []
 
         current_tool = None
         self.units_mult = 1.0
@@ -238,7 +241,8 @@ class Drillfile_Parser:
                 x = float(match_coord.group(1))*self.units_mult
                 y = float(match_coord.group(3))*self.units_mult
 
-                dia = self.tool_diameters.get(current_tool, None)
+                dia = self.tool_diameters[current_tool]
+                #print("dia=",dia)
                 self.holes.append((x, y, dia))
                 print("Hole (%5.1f,%5.1f),%5.2f"%(x, y, dia))
 
@@ -247,11 +251,11 @@ class Drillfile_Parser:
                 if y < y_min: y_min = y
                 if y > y_max: y_max = y
 
-    def shift(self, x_base, y_base):
+    def shift(self, x_shift:float, y_shift:float):
         # Offset same way as traces were offset.
         for i in range(0, len(self.holes)):
             hole = self.holes[i]
-            self.holes[i] = (hole[0]-x_base, hole[1]-y_base, hole[2])
+            self.holes[i] = (hole[0]-x_shift, hole[1]-y_shift, hole[2])
 
 
 #=========================================================================================
@@ -289,7 +293,7 @@ class Shapely_bases:
         # Combine shapes into one geometry for shapely library
         self.combined_geometry = unary_union(traces+pads)
 
-    def compute_trace_toolpaths(self, offset_distance, num_passes, path_spacing):
+    def compute_trace_toolpaths(self, offset_distance:float, num_passes:int, path_spacing:float):
         all_passes = []
 
         for passnum in range (0, num_passes):
@@ -298,12 +302,10 @@ class Shapely_bases:
             # This call computes the offset toolpath.
             thispath = self.combined_geometry.buffer(offset).simplify(0.03).boundary
 
-            if thispath == "LineString": thispath = MultiLineString([pass1_lines])
+            if thispath == "LineString": thispath = MultiLineString(thispath)
             all_passes += list(thispath.geoms)
 
-        all_passes = MultiLineString(all_passes)
-
-        return all_passes
+        return MultiLineString(all_passes)
 
 #=========================================================================================
 class Output_visualizer:
@@ -311,12 +313,12 @@ class Output_visualizer:
     def __init__(self):
         self.offset_geometry = False # None yet
         self.holes = []
-        self.scale = 40  # pixels per mm
+        self.scale = 25  # pixels per mm
 
     def load_trace_geometries(self, traces):
         self.traces = traces
 
-    def load_holes(self, p_holes):
+    def load_holes(self, p_holes:list):
         self.holes = p_holes
 
     def load_trace_mill_geometry(self, offsets):
@@ -330,7 +332,8 @@ class Output_visualizer:
         import tkinter as tk # Import locally as its only used here.
         root = tk.Tk()
         self.canvas = None
-        root.title('Gerber & Drill file to tool paths.  Close this window to continue')
+        global base_name
+        root.title(base_name+':   Edge cut paths in white.  Close this window to continue')
 
         # Calculate canvas size based on content
         global x_min,x_max,y_min,y_max
@@ -433,7 +436,7 @@ class Gcode_Generator:
         self.hole_depth = -1.8      # Final depth to make it through the PCB
 
 
-    def OutputGcode (self, filename, edgecuts, trace_mill_geometry, holes):
+    def OutputGcode (self, filename:str, edgecuts:list, trace_mill_geometry, holes:list):
         f = open(filename, "w")
         f.write("%\n")
         f.write("G21  ; Set units to mm\n")
@@ -537,19 +540,19 @@ if len(sys.argv) < 2:
     print("    [outname] is optional output file name, otherwise based on prject name");
     sys.exit();
 
-if len(sys.argv) > 1:
-    base_name = sys.argv[1].replace("\\","/")
-    outname = base_name.split("/")[-1]+".nc"
-    if base_name[-1] != '-': base_name += "-"
+base_name = sys.argv[1].replace("\\","/")
+outname = base_name.split("/")[-1]+".nc"
 
 # For calculating extents of the board
-x_min = y_min = 1000000
-x_max = y_max = -1000000
+x_min:float = 1000000.0
+x_max:float = -1000000.0
+y_min:float = 1000000.0
+y_max:float = -1000000.0
 
 # Use KiCad's naming convention to  get the copper front layer, ege cuts, and drill files.
-gerber_traces = Gerber_Traces_Parser(base_name+"F_Cu.gbr")
-gerber_edgecuts = Gerber_EdgeCuts_Parser(base_name+"Edge_cuts.gbr")
-drilldata = Drillfile_Parser(base_name+"PTH.drl")
+gerber_traces = Gerber_Traces_Parser(base_name+"-F_Cu.gbr")
+gerber_edgecuts = Gerber_EdgeCuts_Parser(base_name+"-Edge_cuts.gbr")
+drilldata = Drillfile_Parser(base_name+"-PTH.drl")
 
 # Offset all the coordinates so that the origin is on the bottom left.
 # Set the CNC origin to the botom left corner of where your PCB should be milled.
