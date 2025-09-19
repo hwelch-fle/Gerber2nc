@@ -15,6 +15,15 @@ import sys, re, math
 from shapely.geometry import LineString, MultiLineString, Point, box
 from shapely.ops import unary_union
 
+# Argument Parsing/CLI imports
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
+from pathlib import Path
+
+# For calculating extents of the board
+X_MIN:float = 1000000.0
+X_MAX:float = -1000000.0
+Y_MIN:float = 1000000.0
+Y_MAX:float = -1000000.0
 
 class Gerber_Traces_Parser:
     def __init__(self, filename: str):
