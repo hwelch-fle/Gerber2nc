@@ -694,7 +694,9 @@ def run():
         passes, path_spacing
     ) = get_args(parser)
 
-    project = Path(in_proj)
+    # Remove any suffix from the path in case the project file was passed
+    project = Path(in_proj).with_suffix('')
+
     # Cast the outfile to a path
     if out_file == 'project name':
         out_file = Path(project.stem).with_suffix('.nc')
