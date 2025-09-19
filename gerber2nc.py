@@ -432,17 +432,21 @@ class Output_visualizer:
 
 #=========================================================================================
 class Gcode_Generator:
-    def __init__(self):
+    def __init__(self, spindle_speed: int, cut_depth: float,
+                 edge_cut_depth: float, safe_height: float, 
+                 plunge_feed_rate: int, feed_rate: int, 
+                 hole_start: float, hole_depth: float):
+        
         # Milling parameters
-        self.spindle_speed = 12000  # RPM
-        self.cut_depth = -0.1       # mm (for outlinding traces)
-        self.edge_cut_depth = -0.2  # mm For PCB outline
-        self.safe_height = 3.0      # mm above workpiece
-        self.plunge_feed_rate = 200 # mm/min
-        self.feed_rate = 450        # mm/min
+        self.spindle_speed = spindle_speed       # RPM
+        self.cut_depth = cut_depth               # mm (for outlinding traces)
+        self.edge_cut_depth = edge_cut_depth     # mm For PCB outline
+        self.safe_height = safe_height           # mm above workpiece
+        self.plunge_feed_rate = plunge_feed_rate # mm/min
+        self.feed_rate = feed_rate               # mm/min
 
-        self.hole_start = 0.1       # Depth to go to before slow drilling
-        self.hole_depth = -1.8      # Final depth to make it through the PCB
+        self.hole_start = hole_start             # Depth to go to before slow drilling
+        self.hole_depth = hole_depth             # Final depth to make it through the PCB
 
 
     def OutputGcode (self, filename:str, edgecuts:list, trace_mill_geometry, holes:list):
