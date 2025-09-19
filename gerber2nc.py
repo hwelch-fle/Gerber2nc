@@ -701,10 +701,10 @@ def run():
     else:
         out_file = Path(out_file).with_suffix('.nc')
 
-# Use KiCad's naming convention to  get the copper front layer, ege cuts, and drill files.
-gerber_traces = Gerber_Traces_Parser(base_name+"-F_Cu.gbr")
-gerber_edgecuts = Gerber_EdgeCuts_Parser(base_name+"-Edge_cuts.gbr")
-drilldata = Drillfile_Parser(base_name+"-PTH.drl")
+    # Use KiCad's naming convention to  get the copper front layer, ege cuts, and drill files.
+    gerber_traces = Gerber_Traces_Parser(str(next(project.glob('*-F*Cu.g*'))))
+    gerber_edgecuts = Gerber_EdgeCuts_Parser(str(next(project.glob('*-Edge*uts.g*'))))
+    drilldata = Drillfile_Parser(str(next(project.glob('*-PTH.drl'))))
 
     # Offset all the coordinates so that the origin is on the bottom left.
     # Set the CNC origin to the botom left corner of where your PCB should be milled.
