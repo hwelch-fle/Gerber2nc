@@ -77,7 +77,7 @@ class Gerber_Traces_Parser:
 
     def _process_command(self, line:str):
         # Process regular Gerber commands
-        global x_min,x_max,y_min,y_max
+        global X_MIN,X_MAX,Y_MIN,Y_MAX
 
         line = line.rstrip('*')
 
@@ -99,10 +99,10 @@ class Gerber_Traces_Parser:
 
             # Compute extents.  More margin around pads as those can be bigger.
             m = 1.5 if operation == 3 else 0.6
-            if x-m < x_min: x_min = x-m
-            if x+m > x_max: x_max = x+m
-            if y-m < y_min: y_min = y-m
-            if y+m > y_max: y_max = y+m
+            if x-m < X_MIN: X_MIN = x-m
+            if x+m > X_MAX: X_MAX = x+m
+            if y-m < Y_MIN: Y_MIN = y-m
+            if y+m > Y_MAX: Y_MAX = y+m
 
             # Process operation
             if operation == 1:  # Linear interpolation with exposure on
@@ -153,7 +153,7 @@ class Gerber_EdgeCuts_Parser:
     def __init__(self, filename:str):
         self.outline: list[tuple[float, float]] = []
         self.unit_mult:float = 1.0
-        global x_min,x_max,y_min,y_max
+        global X_MIN,X_MAX,Y_MIN,Y_MAX
 
         # Parse the edge cuts gerber file.
         try:
@@ -183,10 +183,10 @@ class Gerber_EdgeCuts_Parser:
                 operation = coord_match.group(3)
 
                 m = 0.2 # 0.2 mm margin around edge cuts so we can see them on the screen
-                if x-m < x_min: x_min = x-m
-                if x+m > x_max: x_max = x+m
-                if y-m < y_min: y_min = y-m
-                if y+m > y_max: y_max = y+m
+                if x-m < X_MIN: X_MIN = x-m
+                if x+m > X_MAX: X_MAX = x+m
+                if y-m < Y_MIN: Y_MIN = y-m
+                if y+m > Y_MAX: Y_MAX = y+m
 
                 if self.outline and operation != '1':
                     # If you draw the PCB outline as individual line segments one at
@@ -212,7 +212,7 @@ class Drillfile_Parser:
 
         current_tool = None
         self.units_mult = 1.0
-        global x_min,x_max,y_min,y_max
+        global X_MIN,X_MAX,Y_MIN,Y_MAX
 
         # Parse the edge cuts gerber file.
         try:
@@ -255,10 +255,10 @@ class Drillfile_Parser:
                 self.holes.append((x, y, dia))
                 print("Hole (%5.1f,%5.1f),%5.2f"%(x, y, dia))
 
-                if x < x_min: x_min = x
-                if x > x_max: x_max = x
-                if y < y_min: y_min = y
-                if y > y_max: y_max = y
+                if x < X_MIN: X_MIN = x
+                if x > X_MAX: X_MAX = x
+                if y < Y_MIN: Y_MIN = y
+                if y > Y_MAX: Y_MAX = y
 
     def shift(self, x_shift:float, y_shift:float):
         # Offset same way as traces were offset.
@@ -319,10 +319,11 @@ class Shapely_bases:
 #=========================================================================================
 class Output_visualizer:
     # Show the PCB and tool paths on the screen for review (I caught a lot of errors this way)
-    def __init__(self):
+    def __init__(self, name: str):
         self.offset_geometry = False # None yet
         self.holes = []
         self.scale = 25  # pixels per mm
+        self.name = name
 
     def load_trace_geometries(self, traces):
         self.traces = traces
@@ -341,13 +342,12 @@ class Output_visualizer:
         import tkinter as tk # Import locally as its only used here.
         root = tk.Tk()
         self.canvas = None
-        global base_name
-        root.title(base_name+':   Edge cut paths in white.  Close this window to continue')
+        root.title(self.name+':   Edge cut paths in white.  Close this window to continue')
 
         # Calculate canvas size based on content
-        global x_min,x_max,y_min,y_max
-        width_mm =  x_max - x_min
-        height_mm = y_max - y_min
+        global X_MIN,X_MAX,Y_MIN,Y_MAX
+        width_mm =  X_MAX - X_MIN
+        height_mm = Y_MAX - Y_MIN
 
         max_window_width = root.winfo_screenwidth() * 0.9
         if self.scale*width_mm > max_window_width: self.scale = max_window_width/width_mm
@@ -529,7 +529,7 @@ class Gcode_Generator:
         f.write("M5  ; Stop spindle\n")
 
         # Move the spindle out of the way.
-        f.write(f"G0 X0 Y{y_max-y_min:.1f} Z50  ; Return home, raise spindle out of the way\n")
+        f.write(f"G0 X0 Y{Y_MAX-Y_MIN:.1f} Z50  ; Return home, raise spindle out of the way\n")
         f.write("M30 ; End of program\n")
         f.write("%\n")
 
@@ -565,9 +565,9 @@ drilldata = Drillfile_Parser(base_name+"-PTH.drl")
 
 # Offset all the coordinates so that the origin is on the bottom left.
 # Set the CNC origin to the botom left corner of where your PCB should be milled.
-gerber_traces.shift(x_min, y_min)
-gerber_edgecuts.shift(x_min, y_min)
-drilldata.shift(x_min, y_min)
+    gerber_traces.shift(X_MIN, Y_MIN)
+    gerber_edgecuts.shift(X_MIN, Y_MIN)
+    drilldata.shift(X_MIN, Y_MIN)
 
 # Now compute the outlines to use for tool paths.
 # Parameters for outlne milling the traces
