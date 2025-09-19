@@ -542,54 +542,196 @@ class Gcode_Generator:
         print("\nG-code generated in '%s'"%(filename))
 #=========================================================================================
 
-if len(sys.argv) < 2:
-    print("Python script to make G-code form simple one side PCB layouts")
-    print("Usage:")
-    print("gerber2nc.py project [outname]")
-    print("    Where project is where your KiCad project, gerber and drill files are")
-    print("    For example, if your project file is in c:\\myproject\\myboard.kicad_pro")
-    print("    You would speicfy 'c:\\myproject\\myboard'")
-    print("")
-    print("    [outname] is optional output file name, otherwise based on prject name");
-    sys.exit();
+def add_args(parser: ArgumentParser) -> None:
+    parser.formatter_class = ArgumentDefaultsHelpFormatter
+    # Required Positional
+    parser.add_argument(
+        'project',
+        help='Filepath of the KiCAD project to convert e.g. **/myproject.kicad_pro'
+    )
+    parser.add_argument(
+        'outfile',
+        help='Target for the generated numerical control (.nc) file [optional]',
+        default='project name',
+    )
+    
+    # Optional output configurations
+    # TODO: Allow generating files for front and backside?
+    #parser.add_argument(
+    #    '-f', '--front',
+    #    help='Generate Frontside code',
+    #    action='store_true',
+    #    default=True,
+    #)
+    #parser.add_argument(
+    #    '-b', '--back',
+    #    help='Generate Backside code',
+    #    action='store_true',
+    #    default=False,
+    #)
 
-base_name = sys.argv[1].replace("\\","/")
-outname = base_name.split("/")[-1]+".nc"
+    # Optional Configuration Parameters
+    config = parser.add_argument_group(title='Milling Configuration')
+    config.add_argument(
+        '-s', '--spindle-speed',
+        help='Spindle speed in RPM',
+        type=int,
+        default=12000,
+        metavar='',
+    )
+    config.add_argument(
+        '-c', '--cut-depth',
+        help='Cut depth for outlining traces (mm)',
+        type=float,
+        default=-0.1,
+        metavar='',
+    )
+    config.add_argument(
+        '-e', '--edge-depth',
+        help='Edge cut depth for PCB outline (mm)',
+        type=float,
+        default=-0.2,
+        metavar='',
+    )
+    config.add_argument(
+        '-g', '--safe-height',
+        help='Safe height above workpiece (mm)',
+        type=float,
+        default=3.0,
+        metavar='',
+    )
+    config.add_argument(
+        '-z', '--z-feed-rate',
+        help='Feedrate along Z axis (mm/min)',
+        type=int,
+        default=200,
+        metavar='',
+    )
+    config.add_argument(
+        '-r', '--feed-rate',
+        help='Feedrate along X/Y (mm/min)',
+        type=int,
+        default=450,
+        metavar='',
+    )
+    config.add_argument(
+        '-t', '--hole-start',
+        help='Top depth to start slow drilling holes (mm)',
+        type=float,
+        default=0.1,
+        metavar='',
+    )
+    config.add_argument(
+        '-d', '--hole-depth',
+        help='Depth at which a hole is complete likely workpiece thickness (mm)',
+        type=float,
+        default=-1.8,
+        metavar='',
+    )
+    config.add_argument(
+        '-o', '--offset-dist',
+        help='Offset of initial path from trace or pad edge (mm)',
+        type=float,
+        default=0.22,
+        metavar='',
+    )
+    config.add_argument(
+        '-p', '--passes',
+        help='Number of passes to take around traces',
+        type=int,
+        default=3,
+        metavar='',
+    )
+    config.add_argument(
+        '-v', '--path-spacing',
+        help='Additional pass offset (mm)',
+        type=float,
+        default=0.2,
+        metavar='',
+    )
 
-# For calculating extents of the board
-x_min:float = 1000000.0
-x_max:float = -1000000.0
-y_min:float = 1000000.0
-y_max:float = -1000000.0
+# Add new parameter types here
+# NOTE: Make sure that the parameter is added to the add_args() method, 
+# the assignment unpacking in run(), and the return statement of get_args()
+# This process is not fully necessary, but it ensures that we have proper type 
+# assignments
+ArgTypes = tuple[
+    str,        # project
+    str,        # outfile
+    int,        # spindle speed
+    float,      # cut depth
+    float,      # edge depth
+    float,      # safe height
+    int,        # plunge feed rate
+    int,        # feed rate
+    float,      # hole start
+    float,      # hole end
+    float,      # offset distance
+    int,        # passes
+    float       # path spacing
+]
+
+def get_args(parser: ArgumentParser) -> ArgTypes:
+    args = parser.parse_args()
+    
+    return (
+        args.project, args.outfile,
+        args.spindle_speed, args.cut_depth,
+        args.edge_depth, args.safe_height,
+        args.z_feed_rate, args.feed_rate,
+        args.hole_start, args.hole_depth,
+        args.offset_dist, args.passes,
+        args.path_spacing,
+    )
+
+def run():
+    parser = ArgumentParser(prog='gerber2nc')
+    add_args(parser)
+    (
+        in_proj, out_file, spindle_speed, cut_depth, 
+        edge_cut_depth, safe_height, plunge_feed_rate, 
+        feed_rate, hole_start, hole_depth, offset_distance, 
+        passes, path_spacing
+    ) = get_args(parser)
+
+    project = Path(in_proj)
+    # Cast the outfile to a path
+    if out_file == 'project name':
+        out_file = Path(project.stem).with_suffix('.nc')
+    else:
+        out_file = Path(out_file).with_suffix('.nc')
 
 # Use KiCad's naming convention to  get the copper front layer, ege cuts, and drill files.
 gerber_traces = Gerber_Traces_Parser(base_name+"-F_Cu.gbr")
 gerber_edgecuts = Gerber_EdgeCuts_Parser(base_name+"-Edge_cuts.gbr")
 drilldata = Drillfile_Parser(base_name+"-PTH.drl")
 
-# Offset all the coordinates so that the origin is on the bottom left.
-# Set the CNC origin to the botom left corner of where your PCB should be milled.
+    # Offset all the coordinates so that the origin is on the bottom left.
+    # Set the CNC origin to the botom left corner of where your PCB should be milled.
     gerber_traces.shift(X_MIN, Y_MIN)
     gerber_edgecuts.shift(X_MIN, Y_MIN)
     drilldata.shift(X_MIN, Y_MIN)
 
-# Now compute the outlines to use for tool paths.
-# Parameters for outlne milling the traces
-offset_distance = 0.22 # Offset of initial path from trace or pad edge
-num_passes = 3         # Number of passes to take around traces
-path_spacing = 0.2     # Additional offset per pass
-sh_base = Shapely_bases(gerber_traces)
-trace_mill_geometry = sh_base.compute_trace_toolpaths(offset_distance, num_passes, path_spacing)
+    # Now compute the outlines to use for tool paths.
+    # Parameters for outlne milling the traces
+    #offset_distance = 0.22 # Offset of initial path from trace or pad edge
+    #num_passes = 3         # Number of passes to take around traces
+    #path_spacing = 0.2     # Additional offset per pass
+    sh_base = Shapely_bases(gerber_traces)
+    trace_mill_geometry = sh_base.compute_trace_toolpaths(offset_distance, passes, path_spacing)
 
-# Now visualize it, then wait for window to be closed before proceeding.
-visualizer = Output_visualizer()
-visualizer.load_trace_geometries(gerber_traces)
-visualizer.load_trace_mill_geometry(trace_mill_geometry)
-visualizer.load_edge_cut_geometry(gerber_edgecuts.outline)
-visualizer.load_holes(drilldata.holes)
-visualizer.create_tkinter_visualization();
+    # Now visualize it, then wait for window to be closed before proceeding.
+    visualizer = Output_visualizer(out_file.stem)
+    visualizer.load_trace_geometries(gerber_traces)
+    visualizer.load_trace_mill_geometry(trace_mill_geometry)
+    visualizer.load_edge_cut_geometry(gerber_edgecuts.outline)
+    visualizer.load_holes(drilldata.holes)
+    visualizer.create_tkinter_visualization();
 
-# After window is closed, generate the G-code
-if len(sys.argv) > 2:  outname = sys.argv[2]+".nc"
-gcode = Gcode_Generator()
-gcode.OutputGcode(outname, gerber_edgecuts.outline, trace_mill_geometry, drilldata.holes)
+    # After window is closed, generate the G-code
+    if len(sys.argv) > 2:  outname = sys.argv[2]+".nc"
+    gcode = Gcode_Generator(spindle_speed, cut_depth, edge_cut_depth, safe_height, plunge_feed_rate, feed_rate, hole_start, hole_depth)
+    gcode.OutputGcode(outname, gerber_edgecuts.outline, trace_mill_geometry, drilldata.holes)
+
+if __name__ == '__main__':
+    run()
